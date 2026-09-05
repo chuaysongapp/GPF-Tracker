@@ -1,6 +1,6 @@
 /* Service Worker — ระบบติดตามการลงทุน กบข.
    เพิ่มเลขเวอร์ชันทุกครั้งที่แก้ไฟล์ app shell */
-const VERSION = 'gpf-tracker-v1';
+const VERSION = 'gpf-tracker-v2';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 

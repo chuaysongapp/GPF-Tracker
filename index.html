@@ -311,7 +311,7 @@ function switchView(v){
   if(v==='settings')renderSettings();
 }
 
-let donutChart,lineChart;
+let donutChart,lineChart,marketTried=false;
 function renderPortfolio(){
   const days=S.lastUpdate?Math.floor((nowTs()-S.lastUpdate)/864e5):999;
   const reminder=days>=30?`<div class="banner"><div style="font-size:20px">🔔</div>
@@ -455,34 +455,61 @@ function marketCard(o){
     ${o.sub?`<div class="sub">${o.sub}</div>`:''}</div>`;
 }
 function renderMarket(){
-  const m=S.market;
-  const goldAt=m.goldAt?new Date(m.goldAt).toLocaleString('th-TH'):'—';
-  const cards=[
-    marketCard({name:'ทองคำ',color:'#d4a017',state:m.gold?'live':'wait',
-      src:m.gold?('xaus.com · XAU/USD · '+goldAt):'แตะปุ่มรีเฟรชเพื่อดึงราคาสด',
-      price:m.gold, dec:2, unit:'USD/oz',
-      chg:(m.gold&&m.goldPrev)?((m.gold-m.goldPrev)/m.goldPrev*100):null,
-      sub:m.gold?`≈ บาททองไทย (96.5%) ประมาณ <b>฿${nf(m.gold*34.5/31.1035*15.244*0.965,0)}</b> · อิง USD/THB 34.5`:''}),
-    marketCard({name:'หุ้นไทย (SET)',color:'#0891b2',state:'wait',src:'จะเชื่อมข้อมูลรายวันจาก กบข. GAS (Round 2)',price:(m.manual&&m.manual.set)||null,dec:2,unit:'จุด',chg:null}),
-    marketCard({name:'หุ้นต่างประเทศ (S&P 500)',color:'#4338ca',state:'wait',src:'จะเชื่อมข้อมูลรายวันจาก กบข. GAS (Round 2)',price:(m.manual&&m.manual.world)||null,dec:0,unit:'จุด',chg:null}),
-    marketCard({name:'ตราสารหนี้ (US 10Y)',color:'#64748b',state:'wait',src:'จะเชื่อมข้อมูลรายวันจาก กบข. GAS (Round 2)',price:(m.manual&&m.manual.bond)||null,dec:2,unit:'%',chg:null}),
+  const m=S.market, d=m.daily||{};
+  const goldAt=m.goldAt?new Date(m.goldAt).toLocaleString('th-TH'):'';
+  const dd=d.date?(' · '+d.date):'';
+  let goldCard;
+  if(m.gold){
+    goldCard=marketCard({name:'ทองคำ',color:'#d4a017',state:'live',src:'xaus.com · XAU/USD · '+goldAt,price:m.gold,dec:2,unit:'USD/oz',
+      chg:(m.gold&&m.goldPrev)?((m.gold-m.goldPrev)/m.goldPrev*100):(d.gold_chg!=null?d.gold_chg:null),
+      sub:`≈ บาททองไทย (96.5%) ประมาณ <b>฿${nf(m.gold*34.5/31.1035*15.244*0.965,0)}</b> · อิง USD/THB 34.5`});
+  }else if(d.gold!=null){
+    goldCard=marketCard({name:'ทองคำ',color:'#d4a017',state:'close',src:'GAS · GC=F'+dd,price:d.gold,dec:2,unit:'USD/oz',chg:d.gold_chg!=null?d.gold_chg:null});
+  }else{
+    goldCard=marketCard({name:'ทองคำ',color:'#d4a017',state:'wait',src:'แตะรีเฟรชเพื่อดึงราคาสด',price:null,dec:2,unit:'USD/oz',chg:null});
+  }
+  const hasCsv=!!m.csvUrl;
+  const waitSrc=hasCsv?('GAS'+dd):'ตั้ง URL ข้อมูลตลาดในแท็บตั้งค่า';
+  const cards=[goldCard,
+    marketCard({name:'หุ้นไทย (SET)',color:'#0891b2',state:d.set!=null?'close':'wait',src:d.set!=null?('GAS · ^SET.BK'+dd):waitSrc,price:d.set!=null?d.set:null,dec:2,unit:'จุด',chg:d.set_chg!=null?d.set_chg:null}),
+    marketCard({name:'หุ้นต่างประเทศ (S&P 500)',color:'#4338ca',state:d.sp!=null?'close':'wait',src:d.sp!=null?('GAS · ^GSPC'+dd):waitSrc,price:d.sp!=null?d.sp:null,dec:0,unit:'จุด',chg:d.sp_chg!=null?d.sp_chg:null}),
+    marketCard({name:'ตราสารหนี้ (US 10Y)',color:'#64748b',state:d.us10y!=null?'close':'wait',src:d.us10y!=null?('GAS · ^TNX'+dd):waitSrc,price:d.us10y!=null?d.us10y:null,dec:2,unit:'%',chg:d.us10y_chg!=null?d.us10y_chg:null}),
   ].join('');
+  const note=hasCsv?'':`<div class="card" style="background:#f7f9fb"><div style="font-size:12.5px;color:#657280;line-height:1.6"><b>เชื่อมข้อมูลรายวัน:</b> ตั้งค่า URL ข้อมูลตลาด (GAS) ในแท็บ “ตั้งค่า” เพื่อให้หุ้น/ตราสารหนี้อัปเดตอัตโนมัติทุกวัน</div></div>`;
   document.getElementById('view-market').innerHTML=`
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <div style="flex:1;font-size:12.5px;color:#657280">ราคาตลาดอ้างอิง · ไม่ใช่ NAV จริงของ กบข.</div>
-      <button class="mini-btn" onclick="refreshGold()">↻ รีเฟรชทอง</button></div>
-    ${cards}
-    <div class="card" style="background:#f7f9fb"><div style="font-size:12.5px;color:#657280;line-height:1.6">
-      <b>Round 2:</b> หุ้น/ตราสารหนี้ จะอัปเดตอัตโนมัติวันละครั้งผ่าน Google Apps Script + สรุปเข้า LINE ทุกเย็น — ผมจะส่งสคริปต์ให้ตั้งค่ารอบถัดไป</div></div>`;
+      <button class="mini-btn" onclick="refreshMarket()">↻ รีเฟรช</button></div>
+    ${cards}${note}`;
+  if(hasCsv && !marketTried){ marketTried=true; fetchDaily(); }
 }
-async function refreshGold(){
+function parseCsv(txt){
+  const lines=txt.trim().split(/\r?\n/).filter(x=>x.length);
+  if(lines.length<2)return null;
+  const head=lines[0].split(',').map(s=>s.trim());
+  const last=lines[lines.length-1].split(',');
+  const o={};head.forEach((h,i)=>{const v=(last[i]||'').trim();o[h]=(v===''?null:(isNaN(+v)?v:+v));});
+  return o;
+}
+async function fetchDaily(){
+  if(!S.market.csvUrl)return;
+  try{
+    const r=await fetch(S.market.csvUrl,{cache:'no-store'});if(!r.ok)throw 0;
+    const o=parseCsv(await r.text());if(!o)throw 0;
+    S.market.daily=o;await save();renderMarket();
+  }catch(e){/* เงียบ ไม่รบกวนผู้ใช้ */}
+}
+async function refreshMarket(){
+  marketTried=false;
+  await Promise.all([refreshGold(true),fetchDaily()]);
+}
+async function refreshGold(silent){
   try{
     const r=await fetch('https://xaus.com/api/');if(!r.ok)throw 0;const j=await r.json();
     const spot=j.spot_usd_oz||(j.xau&&j.xau.price);
-    if(spot){S.market.goldPrev=S.market.gold;S.market.gold=Math.round(spot*100)/100;S.market.goldAt=nowTs();await save();renderMarket();
-      Swal.fire({toast:true,position:'top-end',icon:'success',title:'อัปเดตราคาทองแล้ว',showConfirmButton:false,timer:1400});}
+    if(spot){S.market.goldPrev=S.market.gold;S.market.gold=Math.round(spot*100)/100;S.market.goldAt=nowTs();await save();renderMarket();}
     else throw 0;
-  }catch(e){Swal.fire({toast:true,position:'top-end',icon:'error',title:'ดึงราคาทองไม่สำเร็จ',text:'ตรวจอินเทอร์เน็ต',showConfirmButton:false,timer:1800});}
+  }catch(e){if(!silent)Swal.fire({toast:true,position:'top-end',icon:'error',title:'ดึงราคาทองสดไม่สำเร็จ',showConfirmButton:false,timer:1600});}
 }
 
 function renderSettings(){
