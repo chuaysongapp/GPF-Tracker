@@ -42,6 +42,11 @@
   .pad button{height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:#fff;font-size:22px;font-weight:500;transition:.12s}
   .pad button:active{background:rgba(255,255,255,.28);transform:scale(.96)}
   .pad .ghost{border:none;background:none}
+  .bio-btn{width:96px;height:96px;border-radius:50%;border:2px solid rgba(255,255,255,.5);background:rgba(255,255,255,.10);color:#fff;display:flex;align-items:center;justify-content:center;margin:6px auto 18px;transition:.15s}
+  .bio-btn:active{background:rgba(255,255,255,.25);transform:scale(.96)}
+  .bio-btn svg{width:48px;height:48px}
+  #bioBox{display:flex;flex-direction:column;align-items:center}
+  .link{background:none;border:none;color:#fff;opacity:.85;font-size:13px;text-decoration:underline;padding:8px;margin-top:6px}
   @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}
   .shake{animation:shake .5s}
 
@@ -145,8 +150,17 @@
   <div class="logo">กองทุนบำเหน็จบำนาญข้าราชการ</div>
   <h1 id="lockTitle">ระบบติดตามการลงทุน</h1>
   <div class="sub" id="lockSub">ใส่ PIN 6 หลัก</div>
-  <div class="dots" id="dots"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-  <div class="pad" id="pad"></div>
+  <div id="bioBox" class="hide">
+    <button id="bioBtn" class="bio-btn" onclick="tryBio()" aria-label="สแกนลายนิ้วมือ">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10c0 4-.5 6-1.5 8"/><path d="M8 8.5A5 5 0 0117 12c0 3-.3 5-.9 7"/><path d="M6.5 12a5.5 5.5 0 0111 0c0 2-.2 4-.7 6"/><path d="M9.5 12a2.5 2.5 0 015 0c0 3-.3 5-1 7.5"/><path d="M4.2 9A8 8 0 0120 12"/></svg>
+    </button>
+    <button class="link" onclick="usePinInstead()">ใช้ PIN แทน</button>
+  </div>
+  <div id="pinBox">
+    <div class="dots" id="dots"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="pad" id="pad"></div>
+    <button id="scanLink" class="link hide" onclick="scanAgain()">↺ สแกนลายนิ้วมือ / Face</button>
+  </div>
 </div>
 
 <div id="app" class="hide">
@@ -209,6 +223,7 @@ async function checkPin(pin,rec){const h=await derive(pin,fromB64(rec.salt),rec.
 let S=null;
 function defaultState(){return{
   pin:null,
+  bio:{enabled:false,credId:null},
   gpf:{total:0,asof:'',avgReturn:0,contrib:{save:0,match:0,comp:0,initial:0}},
   mix:{fx:50,th:30,gold:10,prop:10,bond:0},
   targetKey:'A · Global',
@@ -281,7 +296,52 @@ const dotsEl=()=>document.getElementById('dots');
 function buildPad(){const pad=document.getElementById('pad');pad.innerHTML='';
   ['1','2','3','4','5','6','7','8','9','','0','⌫'].forEach(v=>{const b=document.createElement('button');
     if(v===''){b.className='ghost';b.disabled=true;}else{b.textContent=v;b.onclick=()=>press(v);}pad.appendChild(b);});}
-function openLock(){document.getElementById('lock').classList.remove('hide');document.getElementById('app').classList.add('hide');pin='';paintDots();}
+function openLock(){
+  document.getElementById('lock').classList.remove('hide');
+  document.getElementById('app').classList.add('hide');
+  pin='';paintDots();
+  const bioOn=!!(S&&S.bio&&S.bio.enabled&&S.bio.credId);
+  document.getElementById('bioBox').classList.toggle('hide',!bioOn);
+  document.getElementById('pinBox').classList.toggle('hide',bioOn);
+  document.getElementById('scanLink').classList.toggle('hide',!bioOn);
+  document.getElementById('lockSub').textContent=bioOn?'แตะเพื่อสแกนลายนิ้วมือ / Face':'ใส่ PIN 6 หลัก';
+  if(bioOn) setTimeout(()=>tryBio(),300); // ลองอัตโนมัติ (บางเบราว์เซอร์ต้องแตะปุ่มเอง)
+}
+function usePinInstead(){
+  document.getElementById('bioBox').classList.add('hide');
+  document.getElementById('pinBox').classList.remove('hide');
+  document.getElementById('lockSub').textContent='ใส่ PIN 6 หลัก';
+}
+function scanAgain(){
+  document.getElementById('pinBox').classList.add('hide');
+  document.getElementById('bioBox').classList.remove('hide');
+  document.getElementById('lockSub').textContent='แตะเพื่อสแกนลายนิ้วมือ / Face';
+  tryBio();
+}
+async function bioSupported(){
+  try{ return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch(e){ return false; }
+}
+async function registerBio(){
+  const challenge=crypto.getRandomValues(new Uint8Array(32));
+  const userId=crypto.getRandomValues(new Uint8Array(16));
+  const cred=await navigator.credentials.create({publicKey:{
+    challenge, rp:{name:'กบข. Tracker', id:location.hostname},
+    user:{id:userId, name:'gpf-user', displayName:'GPF Tracker'},
+    pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+    authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},
+    timeout:60000, attestation:'none'}});
+  return b64(cred.rawId);
+}
+async function tryBio(){
+  if(!(S&&S.bio&&S.bio.enabled&&S.bio.credId))return false;
+  try{
+    const challenge=crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({publicKey:{challenge,timeout:60000,userVerification:'required',
+      allowCredentials:[{type:'public-key',id:fromB64(S.bio.credId)}]}});
+    enterApp(); return true;
+  }catch(e){ return false; }
+}
 function paintDots(){const d=dotsEl();d.classList.remove('err');[...d.children].forEach((s,i)=>s.classList.toggle('on',i<pin.length));}
 async function press(v){
   if(v==='⌫'){pin=pin.slice(0,-1);paintDots();return;}
@@ -516,6 +576,7 @@ function renderSettings(){
   document.getElementById('view-settings').innerHTML=`
     <div class="slist">
       <button class="srow" onclick="changePin()"><span class="ic">🔑</span><span class="t">เปลี่ยน PIN<small>ตั้งรหัส 6 หลักใหม่</small></span><span class="chev">›</span></button>
+      <button class="srow" onclick="toggleBio()"><span class="ic">👆</span><span class="t">ปลดล็อกด้วยลายนิ้วมือ/Face<small id="bioStatus">${(S.bio&&S.bio.enabled)?'เปิดอยู่ · แตะเพื่อปิด':'ปิดอยู่ · แตะเพื่อเปิด'}</small></span><span class="chev">${(S.bio&&S.bio.enabled)?'●':'○'}</span></button>
       <button class="srow" onclick="lockNow()"><span class="ic">🔒</span><span class="t">ล็อกแอปตอนนี้</span><span class="chev">›</span></button>
     </div>
     <div class="slist">
@@ -538,6 +599,23 @@ async function changePin(){
       if(a!==b){Swal.showValidationMessage('PIN ไม่ตรงกัน');return false;}return a;}});
   if(r.isConfirmed){S.pin=await makePin(r.value);await save();Swal.fire({toast:true,position:'top-end',icon:'success',title:'เปลี่ยน PIN แล้ว',showConfirmButton:false,timer:1400});}
 }
+async function toggleBio(){
+  if(S.bio&&S.bio.enabled){
+    const c=await Swal.fire({title:'ปิดปลดล็อกด้วยลายนิ้วมือ?',text:'จะกลับไปใช้ PIN อย่างเดียว',icon:'question',showCancelButton:true,confirmButtonText:'ปิด',cancelButtonText:'ยกเลิก',confirmButtonColor:'#be123c'});
+    if(c.isConfirmed){S.bio={enabled:false,credId:null};await save();renderSettings();
+      Swal.fire({toast:true,position:'top-end',icon:'success',title:'ปิดแล้ว',showConfirmButton:false,timer:1300});}
+    return;
+  }
+  if(!await bioSupported()){Swal.fire({icon:'info',title:'อุปกรณ์นี้ยังใช้ไม่ได้',html:'<div style="font-size:13px;color:#657280">ต้องเปิดผ่าน https และมีเซนเซอร์ลายนิ้วมือ/Face + เบราว์เซอร์ที่รองรับ</div>',confirmButtonColor:'#0f766e'});return;}
+  const pr=await Swal.fire({title:'ยืนยัน PIN ปัจจุบัน',input:'password',inputAttributes:{inputmode:'numeric',maxlength:6},inputPlaceholder:'PIN 6 หลัก',showCancelButton:true,confirmButtonText:'ถัดไป',cancelButtonText:'ยกเลิก',confirmButtonColor:'#0f766e'});
+  if(!pr.isConfirmed)return;
+  if(!await checkPin(pr.value||'',S.pin)){Swal.fire({icon:'error',title:'PIN ไม่ถูกต้อง',confirmButtonColor:'#0f766e'});return;}
+  try{
+    const credId=await registerBio();
+    S.bio={enabled:true,credId};await save();renderSettings();
+    Swal.fire({toast:true,position:'top-end',icon:'success',title:'เปิดปลดล็อกด้วยลายนิ้วมือแล้ว',showConfirmButton:false,timer:1800});
+  }catch(e){Swal.fire({icon:'error',title:'ลงทะเบียนไม่สำเร็จ',html:'<div style="font-size:13px;color:#657280">อาจถูกยกเลิก หรืออุปกรณ์ไม่รองรับ</div>',confirmButtonColor:'#0f766e'});}
+}
 function backupData(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -551,7 +629,9 @@ async function restoreData(){
   inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
     try{const txt=await f.text();const obj=JSON.parse(txt);
       if(!obj||typeof obj!=='object'||!('gpf'in obj)||!('mix'in obj))throw 0;
-      S=Object.assign(defaultState(),obj);await save();
+      S=Object.assign(defaultState(),obj);
+      S.bio={enabled:false,credId:null};
+      await save();
       await Swal.fire({icon:'success',title:'กู้คืนสำเร็จ',confirmButtonColor:'#0f766e'});
       if(S.pin)openLock();else enterApp();
     }catch(e){Swal.fire({icon:'error',title:'ไฟล์ไม่ถูกต้อง',confirmButtonColor:'#0f766e'});}};
