@@ -367,7 +367,7 @@ function switchView(v){
   document.getElementById('hdrTitle').childNodes[0].nodeValue=titles[v][0];
   document.getElementById('hdrSub').textContent=titles[v][1];
   if(v==='portfolio')renderPortfolio();
-  if(v==='market')renderMarket();
+  if(v==='market'){renderMarket();refreshOnOpen();}
   if(v==='settings')renderSettings();
 }
 
@@ -541,7 +541,6 @@ function renderMarket(){
       <div style="flex:1;font-size:12.5px;color:#657280">ราคาตลาดอ้างอิง · ไม่ใช่ NAV จริงของ กบข.</div>
       <button class="mini-btn" onclick="refreshMarket()">↻ รีเฟรช</button></div>
     ${cards}${note}`;
-  if(hasCsv && !marketTried){ marketTried=true; fetchDaily(); }
 }
 function parseCsv(txt){
   const lines=txt.trim().split(/\r?\n/).filter(x=>x.length);
@@ -563,6 +562,7 @@ async function refreshMarket(){
   marketTried=false;
   await Promise.all([refreshGold(true),fetchDaily()]);
 }
+function refreshOnOpen(){ refreshGold(true); fetchDaily(); }
 async function refreshGold(silent){
   try{
     const r=await fetch('https://xaus.com/api/');if(!r.ok)throw 0;const j=await r.json();
