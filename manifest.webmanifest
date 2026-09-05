@@ -1,0 +1,15 @@
+{
+  "name": "ระบบติดตามการลงทุน กบข.",
+  "short_name": "กบข. Tracker",
+  "description": "ติดตามเงินออม กบข. สัดส่วนผสมเอง และเส้นทางลดความเสี่ยงก่อนเกษียณ",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f766e",
+  "theme_color": "#0f766e",
+  "lang": "th",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
